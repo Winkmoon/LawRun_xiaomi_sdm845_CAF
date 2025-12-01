@@ -5,7 +5,7 @@ on:
     inputs:
       ksu:
         type: choice
-        description: '集成KernelSU-Next' 
+        description: '集成RKSU' 
         options:
         - '是'
         - '否'
@@ -55,18 +55,13 @@ jobs:
 
 
 
-    - name: 集成 KernelSU-Next
+    - name: 集成 RKSU
       if: github.event.inputs.ksu == '是'
       run: |
         cd $GITHUB_WORKSPACE/kernel_workspace/android-kernel
           rm -rf KernelSU
-          echo "正在集成KernelSU-Next..."
-          curl -LSs "https://raw.githubusercontent.com/Winkmoon/KernelSU-Next/next/kernel/setup.sh" | bash -s next
-          cd KernelSU-Next
-          KSU_VERSION=$(expr $(/usr/bin/git rev-list --count HEAD) "+" 10200)
-          echo "KSUVER=$KSU_VERSION" >> $GITHUB_ENV
-          sed -i "s/DKSU_VERSION=16/DKSU_VERSION=${KSU_VERSION}/" kernel/Makefile
-          cd ..
+          echo "正在集成RKSU..."
+          curl -LSs "https://raw.githubusercontent.com/rsuntk/KernelSU/main/kernel/setup.sh" | bash -s main
 
                
     - name: 设置ccache缓存
