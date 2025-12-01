@@ -1,53 +1,68 @@
-name: Build Kernel from XiaoMi8-byXinRan
-on:
-  workflow_call:
-  workflow_dispatch:
+name: Build mi8 kernel -By Xinran
 
+on:
+  workflow_dispatch:
+    inputs:
+      ksu:
+        type: choice
+        description: '集成SukiSU' 
+        options:
+        - '是'
+        - '否'
+        
 jobs:
   build:
-    name: Build Kernel from XiaoMi8-byXinRan
+
     runs-on: ubuntu-22.04
+
     steps:
-
-      - name: Get branch names.
-        id: branch-names
-        uses: tj-actions/branch-names@v8
-
-      - name: Set SWAP to 5GiB
-        uses: pierotofy/set-swap-space@master
-        with:
-          swap-size-gb: 5
-
-      - name: Initialize compilation environment
-        run: |
-          sudo apt-get update
-          sudo apt-get install git automake flex lzop bison gperf build-essential zip curl zlib1g-dev g++-multilib libxml2-utils bzip2 libbz2-dev libbz2-1.0 libghc-bzlib-dev squashfs-tools pngcrush schedtool dpkg-dev liblz4-tool make optipng maven libssl-dev pwgen libswitch-perl policycoreutils minicom libxml-sax-base-perl libxml-simple-perl bc libc6-dev-i386 lib32ncurses5-dev libx11-dev lib32z-dev libgl1-mesa-dev xsltproc unzip device-tree-compiler python2 python3
-          sudo apt install -y gcc-arm-linux-gnueabihf
-          mkdir -p $GITHUB_WORKSPACE/workdir
-          cd $GITHUB_WORKSPACE/workdir
-          echo "BUILD_TIME=$(TZ=Asia/Shanghai date "+%Y%m%d%H%M")" >> $GITHUB_ENV
-
-      - name: Get zyc-clang20 toolchain
-        run: |
-          wget https://github.com/ZyCromerZ/Clang/releases/download/20.0.0git-20250129-release/Clang-20.0.0git-20250129.tar.gz -O $GITHUB_WORKSPACE/workdir/zyc_clang20.tar.gz
-          mkdir $GITHUB_WORKSPACE/workdir/clang
-          tar zxvf $GITHUB_WORKSPACE/workdir/zyc_clang20.tar.gz -C $GITHUB_WORKSPACE/workdir/clang
-
-      - name: Get Kernel souce
-        run: |
-          git clone --recursive https://github.com/Winkmoon/LawRun_xiaomi_sdm845_CAF -b master --depth 1 $GITHUB_WORKSPACE/workdir/source
+    - uses: actions/checkout@v4
 
 
-      - name: Integration SukiSU
-        run: |
-          cd $GITHUB_WORKSPACE/workdir/source
+
+    - name: 构建编译内核环境
+      run: |
+        sudo apt-get update
+        sudo -E apt-get -y -qq install git make bc bison ccache openssl dos2unix zip kmod cpio flex libelf-dev curl libssl-dev libtfm-dev wget device-tree-compiler ca-certificates python3 python2 libtinfo5 binutils-aarch64-linux-gnu binutils-arm-linux-gnueabi
+        mkdir -p $GITHUB_WORKSPACE/kernel_workspace
+
+
+
+    - name: 下载 Gcc编译器
+      run: |
+        cd $GITHUB_WORKSPACE/kernel_workspace
+        
+        mkdir gcc64
+        wget -O gcc-aarch64.tar.gz https://android.googlesource.com/platform/prebuilts/gcc/linux-x86/aarch64/aarch64-linux-android-4.9/+archive/961622e926a1b21382dba4dd9fe0e5fb3ee5ab7c.tar.gz
+        tar -C gcc64/ -zxvf gcc-aarch64.tar.gz
+    
+        mkdir gcc32
+        wget -O gcc-arm.tar.gz https://android.googlesource.com/platform/prebuilts/gcc/linux-x86/arm/arm-linux-androideabi-4.9/+archive/cb7b3ac1b7fdb49474ff68761909934d1142f594.tar.gz
+        tar -C gcc32/ -zxvf gcc-arm.tar.gz
+    
+    - name: 下载Clang编译器
+      run: |
+        cd $GITHUB_WORKSPACE/kernel_workspace
+        mkdir clang-aosp
+        git clone -q --depth=1 https://github.com/wu17481748/android_prebuilts_clang_host_linux-x86_clang-4691093 clang-aosp
+    
+    
+    - name: 下载内核源码
+      run: |
+        cd $GITHUB_WORKSPACE/kernel_workspace
+        git clone --depth 1 https://github.com/Winkmoon/LawRun_xiaomi_sdm845_CAF -b master android-kernel
+        cd android-kernel
+
+
+
+    - name: 集成 ksu
+      if: github.event.inputs.ksu == '是'
+      run: |
+        cd $GITHUB_WORKSPACE/kernel_workspace/android-kernel
           rm -rf KernelSU
           echo "正在配置SukiSU Ultra..."
           curl -LSs "https://raw.githubusercontent.com/ShirkNeko/SukiSU-Ultra/refs/heads/main/kernel/setup.sh" | bash -s nongki
           cd ./KernelSU
-
-
-          
           # 获取当前 Git 提交的短哈希 (8位)
           GIT_COMMIT_HASH=$(git rev-parse --short=8 HEAD)
           echo "当前提交哈希: $GIT_COMMIT_HASH"
@@ -105,52 +120,49 @@ jobs:
           grep "KSU_VERSION_FULL" kernel/Makefile # 确认版本定义存在
           echo "SukiSU版本号: v${KSU_API_VERSION}-${GIT_COMMIT_HASH}@Xinran_StarBai"
 
+               
+    - name: 设置ccache缓存
+      uses: hendrikmuhs/ccache-action@v1.2
+      with:
+        key: build-kernel-mido-kernel
+        max-size: 2G
 
-          
+    - name: 切换python2.7
+      run: |
+       sudo rm /bin/python
+       sudo ln -s /bin/python2.7 /bin/python
+ 
+    - name: 开始编译内核
+      run: |
+        cd $GITHUB_WORKSPACE/kernel_workspace/android-kernel
+        export PATH=$GITHUB_WORKSPACE/kernel_workspace/clang-aosp/bin:$GITHUB_WORKSPACE/kernel_workspace/gcc64/bin:$GITHUB_WORKSPACE/kernel_workspace/gcc32/bin:$PATH
+        export KBUILD_BUILD_HOST=Xinran
+        export KBUILD_BUILD_USER=StarBai
+        make -s -j$(nproc --all) O=out ARCH=arm64 LawRun_defconfig
+        make -j$(nproc --all) CC="ccache clang" O=out ARCH=arm64 CLANG_TRIPLE=aarch64-linux-gnu- CROSS_COMPILE=aarch64-linux-android- CROSS_COMPILE_ARM32=arm-linux-androideabi-
+                
 
-      - name: Build Kernel
-        run: |
-          cd $GITHUB_WORKSPACE/workdir/source
-          export KBUILD_BUILD_HOST=XinRan
-          export KBUILD_BUILD_USER=StarBai
-          export ARCH="arm64"
-          export SUBARCH="arm64"
-          export PATH="$GITHUB_WORKSPACE/workdir/clang/bin/:$PATH"
-          export CROSS_COMPILE="aarch64-linux-gnu-"
-          export CROSS_COMPILE_ARM32="arm-linux-gnueabihf-"
-          
-          make O=out LawRun_defconfig CC=clang
-          #echo "CONFIG_LITTLE_CPU_MASK=0xf" >> out/.config
-          #echo "CONFIG_BIG_CPU_MASK=0xf0" >> out/.config
-          make -j$(nproc --all) O=out CC=clang
+    - name: 制作Anykernel3卡刷包
+      run: |
+        cd $GITHUB_WORKSPACE/kernel_workspace
+        rm -rf AnyKernel3
+        git clone https://github.com/Winkmoon/AnyKernel3 -b master --depth 1
+        rm -rf .git
+        cp android-kernel/out/arch/arm64/boot/Image.gz-dtb android-kernel/Anykernel3/
+        cp -a android-kernel/Anykernel3 android-kernel/out/arch/arm64/boot/anykernel3
+        zip -r android-kernel/out/arch/arm64/boot/sdm845-xinran_mi8-ak3.zip android-kernel/out/arch/arm64/boot/anykernel3
+        
 
-      - name: Check a kernel output files
-        run: |
-          cd $GITHUB_WORKSPACE/workdir/source
-          if [ -f out/arch/arm64/boot/Image.gz-dtb ]; then
-              echo "CHECK_FILE_IS_OK=true" >> $GITHUB_ENV
-          else
-              echo "Kernel output file is empty"
-              exit 1
-          fi
+    
+    - name: 上传卡刷包
+      uses: actions/upload-artifact@v4
+      with:
+        name: sdm845-xinran_mi8-Anykernel3
+        path: kernel_workspace/android-kernel/out/arch/arm64/boot/anykernel3/*
+        
 
-      - name: Upload Kernel
-        if: env.CHECK_FILE_IS_OK == 'true'
-        uses: actions/upload-artifact@v4
-        with:
-          name: android_kernel_xiaomi_sdm845_xinran_${{ env.BUILD_TIME }}_Image.gz-dtb
-          path: workdir/source/out/arch/arm64/boot/Image.gz-dtb
-  
-      - name: Make Anykernel3
-        if: env.CHECK_FILE_IS_OK == 'true'
-        run: |
-          git clone https://github.com/Winkmoon/AnyKernel3 -b master --depth 1 $GITHUB_WORKSPACE/workdir/ak3
-          rm -r $GITHUB_WORKSPACE/workdir/ak3/.git
-          cp $GITHUB_WORKSPACE/workdir/source/out/arch/arm64/boot/Image.gz-dtb $GITHUB_WORKSPACE/workdir/ak3
-
-      - name: Upload AnyKernel3
-        if: env.CHECK_FILE_IS_OK == 'true'
-        uses: actions/upload-artifact@v4
-        with:
-          name: AnyKernel3_xiaomi_sdm845_xinran_${{ env.BUILD_TIME }}
-          path: workdir/ak3/*
+    - name: 上传编译内核
+      uses: actions/upload-artifact@v4
+      with:
+        name: sdm845-xinran_mi8-kernel
+        path: kernel_workspace/android-kernel/out/arch/arm64/boot/*
