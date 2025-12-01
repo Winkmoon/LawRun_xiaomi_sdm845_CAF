@@ -119,6 +119,8 @@ jobs:
           
           cd $GITHUB_WORKSPACE/workdir/source
           make O=out dipper_defconfig CC=clang
+          echo "CONFIG_LITTLE_CPU_MASK=0xf" >> out/.config
+          echo "CONFIG_BIG_CPU_MASK=0xf0" >> out/.config
           make -j$(nproc --all) O=out CC=clang
 
       - name: Check a kernel output files
