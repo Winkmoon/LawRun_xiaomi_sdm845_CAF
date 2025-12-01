@@ -5,7 +5,7 @@ on:
     inputs:
       ksu:
         type: choice
-        description: '集成RKSU' 
+        description: '集成KSU' 
         options:
         - '是'
         - '否'
@@ -55,13 +55,13 @@ jobs:
 
 
 
-    - name: 集成 RKSU
+    - name: 集成 KSU
       if: github.event.inputs.ksu == '是'
       run: |
         cd $GITHUB_WORKSPACE/kernel_workspace/android-kernel
           rm -rf KernelSU
-          echo "正在集成RKSU..."
-          curl -LSs "https://raw.githubusercontent.com/rsuntk/KernelSU/main/kernel/setup.sh" | bash -s main
+          echo "正在集成KSU..."
+          curl -LSs "https://raw.githubusercontent.com/tiann/KernelSU/main/kernel/setup.sh" | bash -s v0.9.5
 
                
     - name: 设置ccache缓存
